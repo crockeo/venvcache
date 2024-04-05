@@ -4,7 +4,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use structopt::StructOpt;
 
+use crate::journal::Journal;
+
 mod journal;
+mod venv;
 
 #[derive(StructOpt)]
 struct Opt {
@@ -17,6 +20,13 @@ struct Opt {
     #[structopt(long, env = "VENVCACHE_ROOT")]
     root: PathBuf,
 
+    /// The location of the journal file we use to communicate venv use between processes.
+    #[structopt(long, env = "VENVCACHE_JOURNAL")]
+    journal: PathBuf,
+
+    #[structopt(long, default_value = "50")]
+    maximum_venvs: usize,
+
     /// When provided, read requirements in from the provided file instead of from stdin.
     #[structopt(long)]
     requirements: Option<PathBuf>,
@@ -28,15 +38,22 @@ struct Opt {
 
 fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
+    let mut journal = Journal::new(&opt.journal, opt.maximum_venvs)?;
 
     let requirements = read_requirements(&opt)?;
-    let shasum = sha256::digest(
-        format!("{:?}:{}", opt.python, requirements)
-    );
+    let shasum = sha256::digest(format!("{:?}:{}", opt.python, requirements));
 
     fs::create_dir_all(&opt.root)?;
-    let venv_dir = opt.root.join(&shasum);
 
+    if let Some(venv_to_delete_shasum) = journal.record_usage(&shasum)? {
+        let venv_to_delete = opt.root.join(&venv_to_delete_shasum);
+        let mut venv_to_delete_lock = fd_lock::RwLock::new(File::open(venv_to_delete.with_extension(".lock"))?);
+        let _write_lock = venv_to_delete_lock.write()?;
+        std::fs::remove_dir_all(venv_to_delete)?;
+        journal.mark_deleted(&venv_to_delete_shasum)?;
+    }
+
+    let venv_dir = opt.root.join(&shasum);
     let mut venv_rwlock = get_venv_lock(&venv_dir)?;
     for _ in 0..5 {
         {
