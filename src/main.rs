@@ -30,7 +30,9 @@ fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
 
     let requirements = read_requirements(&opt)?;
-    let shasum = sha256::digest(&requirements);
+    let shasum = sha256::digest(
+        format!("{:?}:{}", opt.python, requirements)
+    );
 
     fs::create_dir_all(&opt.root)?;
     let venv_dir = opt.root.join(&shasum);
