@@ -64,13 +64,13 @@ fn main() -> anyhow::Result<()> {
         manager.create(&opt.python, &requirements)?;
     }
 
-    let mut journal = Journal::new(&opt.journal, opt.maximum_venvs)?;
-    if let Some(venv_to_delete_sha) = journal.record_usage(&venv_sha)? {
-        log::debug!("Exceeded maximum venvs. Deleting {:?}", venv_to_delete_sha);
-        let delete_venv_dir = opt.root.join(&venv_to_delete_sha);
-        let mut delete_manager = venv::VenvManager::new(delete_venv_dir)?;
-        delete_manager.delete()?;
-        journal.mark_deleted(&venv_to_delete_sha)?;
+    let journal = Journal::new(&opt.journal, opt.maximum_venvs)?;
+    let expired_venvs = journal.record_usage(&venv_sha)?;
+    for expired_venv in expired_venvs {
+        let expired_venv_dir = opt.root.join(&expired_venv);
+        let mut expired_manager = venv::VenvManager::new(expired_venv_dir)?;
+        expired_manager.delete()?;
+        journal.mark_deleted(&expired_venv)?;
     }
 
     log::error!("Failed to create a venv within 5 attempts.");

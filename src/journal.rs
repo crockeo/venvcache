@@ -1,32 +1,75 @@
 use std::path::Path;
 
-// TODO: could this be done better with sqlite?
+// TODO: could this be done better with rusqlite?
 // it seems easier to keep an open connection and just do atomic operations
-// and then let sqlite manage shared connections to the same file...
+// and then let rusqlite manage shared connections to the same file...
 
 /// Provides an interface to a least frecency-used cache.
 /// Allows one to journal the usage of resources (identified by fingerprints)
 /// on disk, and calculate which resource is most optimal to delete.
-pub struct Journal {}
+pub struct Journal {
+    db: rusqlite::Connection,
+    maximum_resources: usize,
+}
 
 impl Journal {
     pub fn new(path: &Path, maximum_resources: usize) -> anyhow::Result<Self> {
-        // todo!()
-        Ok(Self{})
+        let mut db = Self {
+            db: rusqlite::Connection::open(path)?,
+            maximum_resources,
+        };
+        db.migrate()?;
+        Ok(db)
+    }
+
+    fn migrate(&mut self) -> anyhow::Result<()> {
+        self.db.execute(
+            r#"
+            CREATE TABLE IF NOT EXISTS resources (
+                fingerprint VARCHAR PRIMARY KEY,
+                last_used DATETIME NOT NULL
+            )
+            "#,
+            (),
+        )?;
+        Ok(())
     }
 
     /// Records that a resource was used.
     /// If the number of resources used exceeds the maximum allocated amount
     /// this function will also return a fingerprint whose resource should be deleted.
     /// That fingerprint is determined by the least-frecent (recent + frequent) resource.
-    pub fn record_usage(&mut self, fingerprint: &str) -> anyhow::Result<Option<String>> {
-        // todo!()
-        Ok(None)
+    pub fn record_usage(&self, fingerprint: &str) -> anyhow::Result<Vec<String>> {
+        let now = chrono::Utc::now();
+        self.db.execute(
+            r#"
+            INSERT INTO resources(
+                fingerprint,
+                last_used
+            ) VALUES (
+                ?,
+                ?
+            ) ON CONFLICT(fingerprint)
+            DO UPDATE SET last_used=?
+            "#,
+            (fingerprint, now, now),
+        )?;
+
+        let mut stmt = self.db.prepare("SELECT fingerprint, ROW_NUMBER() OVER (ORDER BY last_used) AS row_number WHERE row_number > ?")?;
+        let expired_resources: Vec<String> = stmt
+            .query_map((self.maximum_resources,), |row| row.get(0))?
+            .flatten()
+            .collect();
+
+        Ok(expired_resources)
     }
 
     /// Marks a particular resource as deleted.
-    pub fn mark_deleted(&mut self, fingerprint: &str) -> anyhow::Result<()> {
-        // todo!()
+    pub fn mark_deleted(&self, fingerprint: &str) -> anyhow::Result<()> {
+        self.db.execute(
+            "DELETE FROM resources WHERE fingerprint = ?",
+            (fingerprint,),
+        )?;
         Ok(())
     }
 }
