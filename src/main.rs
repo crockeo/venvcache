@@ -46,6 +46,18 @@ fn main() -> anyhow::Result<()> {
     let venv_dir = opt.root.join(&venv_sha);
     let mut manager = venv::VenvManager::new(venv_dir)?;
 
+    // Can we leak a venv on disk without tracking it?
+    //
+    // - p1 marks that `venv_sha` is in use and finds a sha to delete
+    // - p2 marks some othe sha, and gets `venv_sha` as its venv_to_delete
+    // - p2 deletes the venv under `venv_sha` and marks that it's deleted. it gets removed from the database
+    // - p1 attempts to run, does not have a venv
+    // - p1 creates a venv
+    //
+    // So:
+    // - the venv for p1 exists on disk
+    // - the record of it doesn't exist in the database
+    // TODO: fix this bug! ^
     let mut journal = Journal::new(&opt.journal, opt.maximum_venvs)?;
     if let Some(venv_to_delete_sha) = journal.record_usage(&venv_sha)? {
         let delete_venv_dir = opt.root.join(&venv_to_delete_sha);
