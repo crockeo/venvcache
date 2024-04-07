@@ -1,1 +1,4 @@
 /target
+
+# Canonical directory for creating test venvs.
+/testvenvs
