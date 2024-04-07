@@ -1,7 +1,5 @@
-use std::fs::{self, File};
-use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::io::Read;
+use std::path::PathBuf;
 use structopt::StructOpt;
 
 use crate::journal::Journal;
@@ -38,34 +36,29 @@ struct Opt {
 
 fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
-    let mut journal = Journal::new(&opt.journal, opt.maximum_venvs)?;
+    std::fs::create_dir_all(&opt.root)?;
 
     let requirements = read_requirements(&opt)?;
-    let shasum = sha256::digest(format!("{:?}:{}", opt.python, requirements));
 
-    fs::create_dir_all(&opt.root)?;
+    let venv_sha = venv::venv_sha(&opt.python, &requirements)?;
+    let venv_dir = opt.root.join(&venv_sha);
+    let mut manager = venv::VenvManager::new(venv_dir)?;
 
-    if let Some(venv_to_delete_shasum) = journal.record_usage(&shasum)? {
-        let venv_to_delete = opt.root.join(&venv_to_delete_shasum);
-        let mut venv_to_delete_lock = fd_lock::RwLock::new(File::open(venv_to_delete.with_extension(".lock"))?);
-        let _write_lock = venv_to_delete_lock.write()?;
-        std::fs::remove_dir_all(venv_to_delete)?;
-        journal.mark_deleted(&venv_to_delete_shasum)?;
+    let mut journal = Journal::new(&opt.journal, opt.maximum_venvs)?;
+    if let Some(venv_to_delete_sha) = journal.record_usage(&venv_sha)? {
+        let delete_venv_dir = opt.root.join(&venv_to_delete_sha);
+        let mut delete_manager = venv::VenvManager::new(delete_venv_dir)?;
+        delete_manager.delete()?;
+        journal.mark_deleted(&venv_to_delete_sha)?;
     }
 
-    let venv_dir = opt.root.join(&shasum);
-    let mut venv_rwlock = get_venv_lock(&venv_dir)?;
     for _ in 0..5 {
-        {
-            let _read_lock = venv_rwlock.read()?;
-            if venv_dir.exists() {
-                run_python(&opt, &venv_dir);
+        manager.create(&opt.python, &requirements)?;
+        match manager.run(&opt.args) {
+            Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+            Err(err) => {
+                eprintln!("Failed to run Python: {:?}", err);
             }
-        }
-
-        {
-            let _write_lock = venv_rwlock.write()?;
-            create_venv(&opt, &venv_dir, &requirements)?;
         }
     }
 
@@ -83,54 +76,4 @@ fn read_requirements(opt: &Opt) -> anyhow::Result<String> {
         }
     };
     Ok(contents)
-}
-
-fn get_venv_lock(venv_dir: &Path) -> anyhow::Result<fd_lock::RwLock<File>> {
-    let lock_name = venv_dir.with_extension("lock");
-    let file = File::create(lock_name)?;
-    Ok(fd_lock::RwLock::new(file))
-}
-
-fn run_python(opt: &Opt, venv_dir: &Path) -> ! {
-    let venv_python = venv_dir.join("bin").join("python");
-    let status = match Command::new(venv_python).args(&opt.args).status() {
-        Ok(status) => status,
-        Err(err) => {
-            eprintln!("Failed to get status from Python: {:?}", err);
-            std::process::exit(1)
-        }
-    };
-    match status.code() {
-        Some(code) => std::process::exit(code),
-        None => {
-            eprintln!("Python subprocess terminated by a signal.");
-            std::process::exit(127)
-        }
-    }
-}
-
-fn create_venv(opt: &Opt, venv_dir: &Path, requirements: &str) -> anyhow::Result<()> {
-    let status = Command::new(&opt.python)
-        .args(["-m", "venv"])
-        .arg(venv_dir)
-        .status()?;
-    anyhow::ensure!(status.success(), "Failed to create virtual environment");
-
-    let requirements_file_path = venv_dir.with_extension(".requirements");
-    {
-        let mut requirements_file = File::create(&requirements_file_path)?;
-        requirements_file.write_all(requirements.as_bytes())?;
-    }
-
-    let venv_pip = venv_dir.join("bin").join("pip");
-    let status = Command::new(&venv_pip)
-        .args(&["install", "-r"])
-        .arg(requirements_file_path)
-        .status()?;
-    anyhow::ensure!(
-        status.success(),
-        "Failed to pip install requirements into virtual environment"
-    );
-
-    Ok(())
 }

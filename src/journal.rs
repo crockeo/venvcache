@@ -11,7 +11,8 @@ pub struct Journal {}
 
 impl Journal {
     pub fn new(path: &Path, maximum_resources: usize) -> anyhow::Result<Self> {
-        todo!()
+        // todo!()
+        Ok(Self{})
     }
 
     /// Records that a resource was used.
@@ -19,11 +20,13 @@ impl Journal {
     /// this function will also return a fingerprint whose resource should be deleted.
     /// That fingerprint is determined by the least-frecent (recent + frequent) resource.
     pub fn record_usage(&mut self, fingerprint: &str) -> anyhow::Result<Option<String>> {
-        todo!()
+        // todo!()
+        Ok(None)
     }
 
     /// Marks a particular resource as deleted.
     pub fn mark_deleted(&mut self, fingerprint: &str) -> anyhow::Result<()> {
-        todo!()
+        // todo!()
+        Ok(())
     }
 }
