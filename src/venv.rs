@@ -63,7 +63,9 @@ impl VenvManager {
 
     pub fn delete(&mut self) -> anyhow::Result<()> {
         log::debug!("Deleting virtual environment at {:?}", self.path);
-        todo!()
+        let _write_lock = self.lock.write()?;
+        std::fs::remove_dir_all(&self.path)?;
+        Ok(())
     }
 
     pub fn run(&self, args: &[String]) -> anyhow::Result<ExitStatus> {
