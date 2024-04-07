@@ -54,21 +54,13 @@ fn main() -> anyhow::Result<()> {
         journal.mark_deleted(&venv_to_delete_sha)?;
     }
 
-    // TODO: think about how we can make this airtight.
-    // right now it works like:
-    // - we check if the venv exists using a read lock
-    // - if it does: skip creating it
-    // - and then attempt to run it
+    // I can't find a good way to do locking here such that
+    // we never drop a lock between creating the venv + attempting a run
+    // because there is no mechanism to atomically downgrade
+    // an exclusive lock to a shared lock.
     //
-    // but we drop read locks between checking, creating, and running
-    // so another process could intercede and:
-    //
-    // - create the venv after we think it doesn't exists
-    //   - this is ok, we can just make VenvManager::create idempotent
-    // - or delete the venv after we think it exists
-    //   - this is not ok, and i don't quite know how to fix it yet!
-    //     i wish we could like """promote""" our read lock into a write lock
-    //     without dropping it :(
+    // Instead: we just attempt to make the venv several times,
+    // and hope that at least one time the venv we care about isn't lost.
     for _ in 0..5 {
         match manager.run(&opt.args) {
             Ok(status) => std::process::exit(status.code().unwrap_or(1)),

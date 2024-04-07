@@ -29,6 +29,7 @@ impl VenvManager {
     pub fn create(&mut self, python_executable: &Path, requirements: &str) -> anyhow::Result<()> {
         log::debug!("Creating virtual environment at {:?}", self.path);
         let _write_lock = self.lock.write()?;
+
         if self.path.join("bin").join("python").exists() {
             log::debug!("Virtual environment already exists at {:?}", self.path);
             return Ok(());
@@ -67,6 +68,7 @@ impl VenvManager {
 
     pub fn run(&self, args: &[String]) -> anyhow::Result<ExitStatus> {
         log::debug!("Running Python in virtual environment at {:?}", self.path);
+        let _read_lock = self.lock.read()?;
 
         let venv_python = self.path.join("bin").join("python");
         if !venv_python.exists() {
