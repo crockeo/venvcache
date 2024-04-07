@@ -35,6 +35,8 @@ struct Opt {
 }
 
 fn main() -> anyhow::Result<()> {
+    pretty_env_logger::init();
+
     let opt = Opt::from_args();
     std::fs::create_dir_all(&opt.root)?;
 
@@ -52,17 +54,33 @@ fn main() -> anyhow::Result<()> {
         journal.mark_deleted(&venv_to_delete_sha)?;
     }
 
+    // TODO: think about how we can make this airtight.
+    // right now it works like:
+    // - we check if the venv exists using a read lock
+    // - if it does: skip creating it
+    // - and then attempt to run it
+    //
+    // but we drop read locks between checking, creating, and running
+    // so another process could intercede and:
+    //
+    // - create the venv after we think it doesn't exists
+    //   - this is ok, we can just make VenvManager::create idempotent
+    // - or delete the venv after we think it exists
+    //   - this is not ok, and i don't quite know how to fix it yet!
+    //     i wish we could like """promote""" our read lock into a write lock
+    //     without dropping it :(
     for _ in 0..5 {
-        manager.create(&opt.python, &requirements)?;
         match manager.run(&opt.args) {
             Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-            Err(err) => {
-                eprintln!("Failed to run Python: {:?}", err);
+            Err(e) if e.downcast_ref::<venv::Error>() == Some(&venv::Error::MissingVenv) => {
+                log::debug!("Virtual environment doesn't exist. Creating a new one.");
             }
+            Err(e) => return Err(e),
         }
+        manager.create(&opt.python, &requirements)?;
     }
 
-    eprintln!("Failed to establish venv within 5 tries.");
+    log::error!("Failed to create a venv within 5 attempts.");
     std::process::exit(1);
 }
 
