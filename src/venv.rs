@@ -80,14 +80,14 @@ impl VenvManager {
         let status = match Command::new(venv_python).args(args).status() {
             Ok(status) => status,
             Err(err) => {
-                eprintln!("Failed to get status from Python: {:?}", err);
+                log::error!("Failed to get status from Python: {:?}", err);
                 std::process::exit(1)
             }
         };
         match status.code() {
             Some(code) => std::process::exit(code),
             None => {
-                eprintln!("Python subprocess terminated by a signal.");
+                log::error!("Python subprocess terminated by a signal.");
                 std::process::exit(127)
             }
         }
