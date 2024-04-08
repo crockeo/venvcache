@@ -1,9 +1,5 @@
 use std::path::Path;
 
-// TODO: could this be done better with rusqlite?
-// it seems easier to keep an open connection and just do atomic operations
-// and then let rusqlite manage shared connections to the same file...
-
 /// Provides an interface to a least frecency-used cache.
 /// Allows one to journal the usage of resources (identified by fingerprints)
 /// on disk, and calculate which resource is most optimal to delete.
@@ -13,7 +9,7 @@ pub struct Journal {
 }
 
 impl Journal {
-    pub fn new(path: &Path, maximum_resources: usize) -> anyhow::Result<Self> {
+    pub fn new(path: impl AsRef<Path>, maximum_resources: usize) -> anyhow::Result<Self> {
         let mut db = Self {
             db: rusqlite::Connection::open(path)?,
             maximum_resources,
@@ -55,7 +51,20 @@ impl Journal {
             (fingerprint, now, now),
         )?;
 
-        let mut stmt = self.db.prepare("SELECT fingerprint, ROW_NUMBER() OVER (ORDER BY last_used) AS row_number WHERE row_number > ?")?;
+        let mut stmt = self.db.prepare(
+            r#"
+            SELECT *
+            FROM (
+                SELECT
+                    fingerprint,
+                    last_used,
+                    ROW_NUMBER() OVER (ORDER BY last_used DESC) AS row_num
+                FROM resources
+            )
+            WHERE row_num > ?
+            ORDER BY last_used ASC
+            "#,
+        )?;
         let expired_resources: Vec<String> = stmt
             .query_map((self.maximum_resources,), |row| row.get(0))?
             .flatten()
@@ -70,6 +79,60 @@ impl Journal {
             "DELETE FROM resources WHERE fingerprint = ?",
             (fingerprint,),
         )?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempdir::TempDir;
+
+    fn test_journal(maximum_resources: usize) -> anyhow::Result<(TempDir, Journal)> {
+        let tempdir = TempDir::new("venvcache-journal-test")?;
+        let path = tempdir.path().join("journal.db");
+        Ok((tempdir, Journal::new(path, maximum_resources)?))
+    }
+
+    #[test]
+    fn test_journal_migrateable() -> anyhow::Result<()> {
+        test_journal(10)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_journal_record() -> anyhow::Result<()> {
+        let (_tempdir, journal) = test_journal(10)?;
+        let expired_resources = journal.record_usage("fingerprint")?;
+        assert_eq!(expired_resources, Vec::<String>::new());
+        Ok(())
+    }
+
+    #[test]
+    fn test_journal_eviction() -> anyhow::Result<()> {
+        let (_tempdir, journal) = test_journal(1)?;
+        let expired_resources1 = journal.record_usage("fingerprint1")?;
+        assert_eq!(expired_resources1, Vec::<String>::new());
+
+        let expired_resources2 = journal.record_usage("fingerprint2")?;
+        assert_eq!(expired_resources2, vec!["fingerprint1"]);
+
+        let expired_resources3 = journal.record_usage("fingerprint3")?;
+        assert_eq!(expired_resources3, vec!["fingerprint1", "fingerprint2"]);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_journal_mark_deleted() -> anyhow::Result<()> {
+        let (_tempdir, journal) = test_journal(1)?;
+        let expired_resources1 = journal.record_usage("fingerprint1")?;
+        assert_eq!(expired_resources1, Vec::<String>::new());
+
+        journal.mark_deleted("fingerprint1")?;
+        let expired_resources2 = journal.record_usage("fingerprint2")?;
+        assert_eq!(expired_resources2, Vec::<String>::new());
+
         Ok(())
     }
 }
