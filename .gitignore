@@ -1,4 +1,7 @@
+# Local development and Linux releases.
 /target
+/target-linux-aarch64
+/target-linux-x86-64
 
 # Canonical directory for creating test venvs.
 /testvenvs
