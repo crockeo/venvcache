@@ -40,7 +40,7 @@ fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
     std::fs::create_dir_all(&opt.root)?;
 
-    let requirements = read_requirements(&opt)?;
+    let requirements = read_requirements(&opt.requirements)?;
 
     let venv_sha = venv::venv_sha(&opt.python, &requirements)?;
     let venv_dir = opt.root.join(&venv_sha);
@@ -77,8 +77,8 @@ fn main() -> anyhow::Result<()> {
     std::process::exit(1);
 }
 
-fn read_requirements(opt: &Opt) -> anyhow::Result<String> {
-    let contents = match &opt.requirements {
+fn read_requirements(requirements: &Option<PathBuf>) -> anyhow::Result<String> {
+    let contents = match requirements {
         Some(path) => std::fs::read_to_string(path)?,
         None => {
             let mut contents = String::new();
@@ -87,4 +87,21 @@ fn read_requirements(opt: &Opt) -> anyhow::Result<String> {
         }
     };
     Ok(contents)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempdir::TempDir;
+
+    #[test]
+    fn test_read_requirements_file() -> anyhow::Result<()> {
+        let tempdir = TempDir::new("venvcache-test")?;
+        let requirements_path = tempdir.path().join("requirements.txt");
+        std::fs::write(&requirements_path, b"requests\n")?;
+
+        let requirements = read_requirements(&Some(requirements_path))?;
+        assert_eq!(requirements, "requests\n");
+        Ok(())
+    }
 }
