@@ -1,8 +1,6 @@
-# This config was automatically generated from your source code
-# Stacks detected: deps:rust:.
 version: 2.1
 jobs:
-  test-rust:
+  test:
     docker:
       - image: cimg/rust:1.70
     steps:
@@ -15,19 +13,7 @@ jobs:
           key: cargo-{{ checksum "Cargo.lock" }}
           paths:
             - ~/.cargo
-  deploy:
-    # This is an example deploy job, not actually used by the workflow
-    docker:
-      - image: cimg/base:stable
-    steps:
-      # Replace this with steps to deploy to users
-      - run:
-          name: deploy
-          command: '#e.g. ./deploy.sh'
 workflows:
   build-and-test:
     jobs:
-      - test-rust
-    # - deploy:
-    #     requires:
-    #       - test-rust
+      - test
