@@ -1,4 +1,2 @@
-FROM rust:latest
-
-WORKDIR /usr/src/venvcache
-COPY . .
+ARG CROSS_BASE_IMAGE
+FROM $CROSS_BASE_IMAGE
