@@ -36,6 +36,7 @@ impl Journal {
     /// this function will also return a fingerprint whose resource should be deleted.
     /// That fingerprint is determined by the least-frecent (recent + frequent) resource.
     pub fn record_usage(&self, fingerprint: &str) -> anyhow::Result<Vec<String>> {
+        log::debug!("Recording usage of fingerprint: `{}`", fingerprint);
         let now = chrono::Utc::now();
         self.db.execute(
             r#"
@@ -75,6 +76,7 @@ impl Journal {
 
     /// Marks a particular resource as deleted.
     pub fn mark_deleted(&self, fingerprint: &str) -> anyhow::Result<()> {
+        log::debug!("Marking fingerprint as deleted: `{}`", fingerprint);
         self.db.execute(
             "DELETE FROM resources WHERE fingerprint = ?",
             (fingerprint,),

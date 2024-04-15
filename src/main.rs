@@ -53,16 +53,28 @@ fn main() -> anyhow::Result<()> {
     //
     // Instead: we just attempt to make the venv several times,
     // and hope that at least one time the venv we care about isn't lost.
+    let mut status_code: Option<i32> = None;
     for _ in 0..5 {
-        match manager.run(&opt.args) {
-            Ok(status) => std::process::exit(status.code().unwrap_or(1)),
-            Err(e) if e.downcast_ref::<venv::Error>() == Some(&venv::Error::MissingVenv) => {
-                log::debug!("Virtual environment doesn't exist. Creating a new one.");
-            }
-            Err(e) => return Err(e),
+        let result = manager.run(&opt.args);
+        if let Ok(status) = result {
+            status_code = Some(status.code().unwrap_or(1));
+            break;
         }
-        manager.create(&opt.python, &requirements)?;
+
+        let err = result.err().unwrap();
+        if err.downcast_ref::<venv::Error>() == Some(&venv::Error::MissingVenv) {
+            log::debug!("Virtual environment doesn't exist. Creating a new one.");
+            manager.create(&opt.python, &requirements)?;
+            continue;
+        }
+
+        return Err(err);
     }
+
+    let Some(status_code) = status_code else {
+        log::error!("Failed to create a venv within 5 attempts.");
+        std::process::exit(127);
+    };
 
     let journal = Journal::new(&opt.journal, opt.maximum_venvs)?;
     let expired_venvs = journal.record_usage(&venv_sha)?;
@@ -73,8 +85,7 @@ fn main() -> anyhow::Result<()> {
         journal.mark_deleted(&expired_venv)?;
     }
 
-    log::error!("Failed to create a venv within 5 attempts.");
-    std::process::exit(1);
+    std::process::exit(status_code)
 }
 
 fn read_requirements(requirements: &Option<PathBuf>) -> anyhow::Result<String> {
