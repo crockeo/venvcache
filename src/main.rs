@@ -4,6 +4,7 @@ use structopt::StructOpt;
 
 use crate::journal::Journal;
 
+mod file_lock;
 mod journal;
 mod venv;
 
