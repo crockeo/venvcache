@@ -1,3 +1,4 @@
+use crate::file_lock::FileLock;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -14,7 +15,7 @@ pub enum Error {
 
 pub struct VenvManager {
     path: PathBuf,
-    lock: fd_lock::RwLock<File>,
+    lock: FileLock,
 }
 
 impl VenvManager {
@@ -22,7 +23,7 @@ impl VenvManager {
         let lock_path = path.with_extension("lock");
         Ok(Self {
             path,
-            lock: fd_lock::RwLock::new(File::create(lock_path)?),
+            lock: FileLock::new(lock_path)?,
         })
     }
 
@@ -68,7 +69,7 @@ impl VenvManager {
         Ok(())
     }
 
-    pub fn run(&self, args: &[String]) -> anyhow::Result<ExitStatus> {
+    pub fn run(&mut self, args: &[String]) -> anyhow::Result<ExitStatus> {
         log::debug!("Running Python in virtual environment at {:?}", self.path);
         let _read_lock = self.lock.read()?;
 

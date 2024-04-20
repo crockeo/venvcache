@@ -18,11 +18,11 @@ impl FileLock {
         Ok(Self { file })
     }
 
-    pub fn read_lock(&mut self) -> anyhow::Result<ReadLock> {
+    pub fn read(&mut self) -> anyhow::Result<ReadLock> {
         ReadLock::new(&mut self.file)
     }
 
-    pub fn write_lock(&mut self) -> anyhow::Result<WriteLock> {
+    pub fn write(&mut self) -> anyhow::Result<WriteLock> {
         WriteLock::new(&mut self.file)
     }
 }
