@@ -745,6 +745,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "fd-lock",
+ "libc",
  "log",
  "pretty_env_logger",
  "rusqlite",
