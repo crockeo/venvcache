@@ -47,33 +47,9 @@ fn main() -> anyhow::Result<()> {
     let venv_dir = opt.root.join(&venv_sha);
     let mut manager = venv::VenvManager::new(venv_dir)?;
 
-    // I can't find a good way to do locking here such that
-    // we never drop a lock between creating the venv + attempting a run
-    // because there is no mechanism to atomically downgrade
-    // an exclusive lock to a shared lock.
-    //
-    // Instead: we just attempt to make the venv several times,
-    // and hope that at least one time the venv we care about isn't lost.
-    let mut status_code: Option<i32> = None;
-    for _ in 0..5 {
-        let result = manager.run(&opt.args);
-        if let Ok(status) = result {
-            status_code = Some(status.code().unwrap_or(1));
-            break;
-        }
-
-        let err = result.err().unwrap();
-        if err.downcast_ref::<venv::Error>() == Some(&venv::Error::MissingVenv) {
-            log::debug!("Virtual environment doesn't exist. Creating a new one.");
-            manager.create(&opt.python, &requirements)?;
-            continue;
-        }
-
-        return Err(err);
-    }
-
-    let Some(status_code) = status_code else {
-        log::error!("Failed to create a venv within 5 attempts.");
+    let status = manager.run(&opt.python, &requirements, &opt.args)?;
+    let Some(status_code) = status.code() else {
+        log::error!("Failed to create venv + run Python: {:?}", status);
         std::process::exit(127);
     };
 

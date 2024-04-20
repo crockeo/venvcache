@@ -46,7 +46,8 @@ impl<'a> ReadLock<'a> {
 impl Drop for ReadLock<'_> {
     fn drop(&mut self) {
         if let Some(ref mut file) = self.file {
-            apply_lock(file, LockOperation::Unlock).expect("Failed to unlock file during ReadLock Drop");
+            apply_lock(file, LockOperation::Unlock)
+                .expect("Failed to unlock file during ReadLock Drop");
         }
     }
 }
@@ -70,7 +71,8 @@ impl<'a> WriteLock<'a> {
 impl Drop for WriteLock<'_> {
     fn drop(&mut self) {
         if let Some(ref mut file) = self.file {
-            apply_lock(file, LockOperation::Unlock).expect("Failed to unlock file during WriteLock Drop");
+            apply_lock(file, LockOperation::Unlock)
+                .expect("Failed to unlock file during WriteLock Drop");
         }
     }
 }
@@ -93,7 +95,7 @@ fn apply_lock(file: &mut File, operation: LockOperation) -> anyhow::Result<()> {
             fd,
             F_SETLKW,
             &flock {
-                l_type: lock_type as i16,
+                l_type: lock_type,
                 l_whence: libc::SEEK_SET as i16,
                 l_start: 0,
                 l_len: 0,
