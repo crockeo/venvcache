@@ -47,7 +47,13 @@ impl VenvManager {
     pub fn delete(&mut self) -> anyhow::Result<()> {
         log::debug!("Deleting virtual environment at {:?}", self.path);
         let _write_lock = self.lock.write()?;
-        std::fs::remove_dir_all(&self.path)?;
+        let result = std::fs::remove_dir_all(&self.path);
+        if let Err(err) = result {
+            if err.kind() == std::io::ErrorKind::NotFound {
+                return Ok(());
+            }
+            return Err(err.into())
+        }
         Ok(())
     }
 }
