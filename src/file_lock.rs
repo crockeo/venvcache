@@ -94,11 +94,11 @@ enum LockOperation {
 
 fn apply_lock(file: &mut File, operation: LockOperation) -> anyhow::Result<()> {
     let fd = file.as_raw_fd();
-    let lock_type = match operation {
+    let lock_type: libc::c_short = match operation {
         LockOperation::Read => libc::F_RDLCK,
         LockOperation::Write => libc::F_WRLCK,
         LockOperation::Unlock => libc::F_UNLCK,
-    };
+    } as libc::c_short;
     let result = unsafe {
         fcntl(
             fd,
