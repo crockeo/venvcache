@@ -5,6 +5,7 @@ use libc::fcntl;
 use libc::flock;
 use libc::F_SETLKW;
 use std::fs::File;
+use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 
@@ -14,7 +15,11 @@ pub struct FileLock {
 
 impl FileLock {
     pub fn new(path: impl AsRef<Path>) -> anyhow::Result<Self> {
-        let file = File::create(path)?;
+        let file = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path.as_ref())?;
         Ok(Self { file })
     }
 
@@ -33,11 +38,13 @@ pub struct ReadLock<'a> {
 
 impl<'a> ReadLock<'a> {
     fn new(file: &'a mut File) -> anyhow::Result<Self> {
+        log::debug!("Taking read lock on file {:?}", file);
         apply_lock(file, LockOperation::Read)?;
         Ok(Self { file: Some(file) })
     }
 
     pub fn upgrade(mut self) -> anyhow::Result<WriteLock<'a>> {
+        log::debug!("Upgrading read lock to write lock on file {:?}", self.file);
         let file = self.file.take().unwrap();
         WriteLock::new(file)
     }
@@ -58,11 +65,13 @@ pub struct WriteLock<'a> {
 
 impl<'a> WriteLock<'a> {
     fn new(file: &'a mut File) -> anyhow::Result<Self> {
+        log::debug!("Taking write lock on file {:?}", file);
         apply_lock(file, LockOperation::Write)?;
         Ok(Self { file: Some(file) })
     }
 
     pub fn downgrade(mut self) -> anyhow::Result<ReadLock<'a>> {
+        log::debug!("Downgrading write lock to read lock on file {:?}", self.file);
         let file = self.file.take().unwrap();
         ReadLock::new(file)
     }
@@ -104,7 +113,8 @@ fn apply_lock(file: &mut File, operation: LockOperation) -> anyhow::Result<()> {
         )
     };
     if result == -1 {
-        anyhow::bail!("Failed to lock file");
+        let err = std::io::Error::last_os_error();
+        return Err(err.into())
     }
     Ok(())
 }
