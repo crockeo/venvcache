@@ -26,13 +26,31 @@ struct Opt {
     #[structopt(long, default_value = "50")]
     maximum_venvs: usize,
 
+    /// When provided, use the contents of this argument as the venv's requirements.
+    #[structopt(long, env = "VENVCACHE_REQUIREMENTS")]
+    requirements: Option<String>,
+
     /// When provided, read requirements in from the provided file instead of from stdin.
     #[structopt(long)]
-    requirements: Option<PathBuf>,
+    requirements_path: Option<PathBuf>,
 
     /// The arguments that will be passed to the Python executable inside of the virtual environment.
     #[structopt()]
     args: Vec<String>,
+}
+
+impl Opt {
+    fn requirements_source(&self) -> anyhow::Result<RequirementsSource> {
+        let source = match (&self.requirements, &self.requirements_path) {
+            (Some(_), Some(_)) => anyhow::bail!(""),
+            (Some(requirements), None) => RequirementsSource::Provided(requirements.to_owned()),
+            (None, Some(requirements_path)) => {
+                RequirementsSource::File(requirements_path.to_owned())
+            }
+            (None, None) => RequirementsSource::Stdin,
+        };
+        Ok(source)
+    }
 }
 
 fn main() -> anyhow::Result<()> {
@@ -41,7 +59,7 @@ fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
     std::fs::create_dir_all(&opt.root)?;
 
-    let requirements = read_requirements(&opt.requirements)?;
+    let requirements = opt.requirements_source()?.read_requirements()?;
 
     let venv_sha = venv::venv_sha(&opt.python, &requirements)?;
     let venv_dir = opt.root.join(&venv_sha);
@@ -65,16 +83,26 @@ fn main() -> anyhow::Result<()> {
     std::process::exit(status_code)
 }
 
-fn read_requirements(requirements: &Option<PathBuf>) -> anyhow::Result<String> {
-    let contents = match requirements {
-        Some(path) => std::fs::read_to_string(path)?,
-        None => {
-            let mut contents = String::new();
-            std::io::stdin().read_to_string(&mut contents)?;
-            contents
-        }
-    };
-    Ok(contents)
+enum RequirementsSource {
+    Stdin,
+    Provided(String),
+    File(PathBuf),
+}
+
+impl RequirementsSource {
+    fn read_requirements(self) -> anyhow::Result<String> {
+        use RequirementsSource::*;
+        let contents = match self {
+            Stdin => {
+                let mut contents = String::new();
+                std::io::stdin().read_to_string(&mut contents)?;
+                contents
+            }
+            Provided(contents) => contents,
+            File(path) => std::fs::read_to_string(path)?,
+        };
+        Ok(contents)
+    }
 }
 
 #[cfg(test)]
@@ -83,13 +111,22 @@ mod tests {
     use tempdir::TempDir;
 
     #[test]
+    fn test_read_requirements_provided() -> anyhow::Result<()> {
+        let source = RequirementsSource::Provided("requests==1.2.3\n".to_owned());
+        let requirements = source.read_requirements()?;
+        assert_eq!(requirements, "requests==1.2.3\n");
+        Ok(())
+    }
+
+    #[test]
     fn test_read_requirements_file() -> anyhow::Result<()> {
         let tempdir = TempDir::new("venvcache-test")?;
         let requirements_path = tempdir.path().join("requirements.txt");
-        std::fs::write(&requirements_path, b"requests\n")?;
+        std::fs::write(&requirements_path, b"requests==4.5.6\n")?;
 
-        let requirements = read_requirements(&Some(requirements_path))?;
-        assert_eq!(requirements, "requests\n");
+        let source = RequirementsSource::File(requirements_path);
+        let requirements = source.read_requirements()?;
+        assert_eq!(requirements, "requests==4.5.6\n");
         Ok(())
     }
 }
